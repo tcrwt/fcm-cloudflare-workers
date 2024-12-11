@@ -24,11 +24,14 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Build
+        run: npm run build
+
       - name: Create Release Pull Request or Publish
         id: changesets
         uses: changesets/action@v1
         with:
-          publish: npm run build && npm publish
+          publish: npm publish
           commit: "chore: version packages"
           title: "chore: version packages"
         env:
