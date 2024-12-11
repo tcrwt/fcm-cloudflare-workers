@@ -12,7 +12,7 @@
     "url": "git+https://github.com/celestifyhq/fcm-cloudflare-workers.git"
   },
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "npm run build && npm link && cd fixtures && npm link fcm-cloudflare-workers && npx wrangler dev",
     "test": "npx ts-node test/test.ts",
     "build": "tsc",
     "publish-lib": "npm run build && npm publish"
@@ -33,6 +33,7 @@
   ],
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240821.1",
+    "@changesets/cli": "^2.27.8",
     "typescript": "~5.5.4",
     "wrangler": "^3.73.0"
   },
