@@ -1,10 +1,11 @@
 import { FcmMessage } from "../entity/fcm-message";
+import { EnhancedFcmMessage } from "../entity/fcm-message-v2";
 import { FcmOptions } from "../entity/fcm-options";
 import { FcmErrorResponse, FcmTokenResponse } from "../entity/fcm-responses";
 import { createJWT } from "./crypto-utils";
 
 /**
- * Class for sending a notification to multiple devices.
+ * Class for sending FCM notifications.
  */
 export class FCM {
   private readonly fcmOptions: FcmOptions;
@@ -20,16 +21,19 @@ export class FCM {
     }
   }
 
+  /**
+   * @deprecated Use sendToTokens, sendToToken, sendToTopic, or sendToCondition instead
+   */
   async sendMulticast(
     message: FcmMessage,
     tokens: Array<string>
   ): Promise<Array<string>> {
     if (!message) {
-      throw new Error("Message is mandatory");
+      throw new Error("Message is required");
     }
 
     if (!tokens?.length) {
-      throw new Error("Token array is mandatory");
+      throw new Error("Token array is required");
     }
 
     const tokenBatches: Array<Array<string>> = [];
@@ -80,6 +84,129 @@ export class FCM {
       console.error("Error sending multicast:", err);
       throw err;
     }
+  }
+
+  /**
+   * Sends a message to a specific FCM registration token
+   */
+  async sendToToken(message: EnhancedFcmMessage, token: string): Promise<void> {
+    if (!message) {
+      throw new Error("Message is required");
+    }
+    if (!token) {
+      throw new Error("Token is required");
+    }
+
+    const projectId = this.validateProjectId();
+    const accessToken = await this.getAccessToken();
+
+    try {
+      await this.sendRequest(token, message, projectId, accessToken);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message === "UNREGISTERED") {
+        throw new Error("The provided registration token is not registered with FCM");
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Sends a message to devices subscribed to a specific topic
+   */
+  async sendToTopic(message: EnhancedFcmMessage, topic: string): Promise<void> {
+    if (!message) {
+      throw new Error("Message is required");
+    }
+    if (!topic) {
+      throw new Error("Topic is required");
+    }
+    if (!topic.match(/^[a-zA-Z0-9-_.~%]+$/)) {
+      throw new Error("Invalid topic format");
+    }
+
+    const projectId = this.validateProjectId();
+    const accessToken = await this.getAccessToken();
+    const messageWithTopic = { ...message, topic };
+
+    await this.sendRequest("", messageWithTopic, projectId, accessToken);
+  }
+
+  /**
+   * Sends a message to devices that match the condition
+   */
+  async sendToCondition(message: EnhancedFcmMessage, condition: string): Promise<void> {
+    if (!message) {
+      throw new Error("Message is required");
+    }
+    if (!condition) {
+      throw new Error("Condition is required");
+    }
+
+    const projectId = this.validateProjectId();
+    const accessToken = await this.getAccessToken();
+    const messageWithCondition = { ...message, condition };
+
+    await this.sendRequest("", messageWithCondition, projectId, accessToken);
+  }
+
+  /**
+   * Sends an enhanced message to multiple FCM registration tokens
+   * Returns an array of tokens that are no longer registered
+   */
+  async sendToTokens(message: EnhancedFcmMessage, tokens: Array<string>): Promise<Array<string>> {
+    if (!message) {
+      throw new Error("Message is required");
+    }
+
+    if (!tokens?.length) {
+      throw new Error("Token array is required");
+    }
+
+    const tokenBatches: Array<Array<string>> = [];
+    let batchLimit = Math.ceil(
+      tokens.length / this.fcmOptions.maxConcurrentConnections
+    );
+
+    if (batchLimit <= this.fcmOptions.maxConcurrentStreamsAllowed) {
+      batchLimit = this.fcmOptions.maxConcurrentStreamsAllowed;
+    }
+
+    for (let start = 0; start < tokens.length; start += batchLimit) {
+      tokenBatches.push([...tokens.slice(start, start + batchLimit)]);
+    }
+
+    const unregisteredTokens: Array<string> = [];
+    const projectId = this.validateProjectId();
+    const accessToken = await this.getAccessToken();
+
+    try {
+      const results = await Promise.allSettled(
+        tokenBatches.map((batch) =>
+          this.processBatch(message, batch, projectId, accessToken)
+        )
+      );
+
+      results.forEach((result) => {
+        if (result.status === "fulfilled") {
+          unregisteredTokens.push(...result.value);
+        } else {
+          console.error("Error processing batch:", result.reason);
+        }
+      });
+
+      return unregisteredTokens;
+    } catch (err) {
+      console.error("Error sending to tokens:", err);
+      throw err;
+    }
+  }
+
+  private validateProjectId(): string {
+    const projectId = this.fcmOptions.serviceAccount?.project_id;
+    if (!projectId) {
+      throw new Error("Unable to determine Firebase Project ID from service account file.");
+    }
+    return projectId;
   }
 
   private async getAccessToken(): Promise<string> {
