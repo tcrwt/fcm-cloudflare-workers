@@ -97,11 +97,8 @@ export class FCM {
       throw new Error("Token is required");
     }
 
-    const projectId = this.validateProjectId();
-    const accessToken = await this.getAccessToken();
-
     try {
-      await this.sendRequest(token, message, projectId, accessToken);
+      await this.sendMessage({ ...message, token });
     } catch (err: unknown) {
       if (err instanceof Error && err.message === "UNREGISTERED") {
         throw new Error("The provided registration token is not registered with FCM");
@@ -124,11 +121,7 @@ export class FCM {
       throw new Error("Invalid topic format");
     }
 
-    const projectId = this.validateProjectId();
-    const accessToken = await this.getAccessToken();
-    const messageWithTopic = { ...message, topic };
-
-    await this.sendRequest("", messageWithTopic, projectId, accessToken);
+    await this.sendMessage({ ...message, topic });
   }
 
   /**
@@ -142,11 +135,7 @@ export class FCM {
       throw new Error("Condition is required");
     }
 
-    const projectId = this.validateProjectId();
-    const accessToken = await this.getAccessToken();
-    const messageWithCondition = { ...message, condition };
-
-    await this.sendRequest("", messageWithCondition, projectId, accessToken);
+    await this.sendMessage({ ...message, condition });
   }
 
   /**
@@ -157,7 +146,6 @@ export class FCM {
     if (!message) {
       throw new Error("Message is required");
     }
-
     if (!tokens?.length) {
       throw new Error("Token array is required");
     }
@@ -337,6 +325,11 @@ export class FCM {
     return unregisteredTokens;
   }
 
+  /**
+   * @deprecated This is an internal method that will be removed in a future version.
+   * Use sendToToken, sendToTokens, sendToTopic, or sendToCondition instead.
+   * @internal
+   */
   private async sendRequest(
     device: string,
     message: any,
@@ -388,6 +381,42 @@ export class FCM {
       }
     } catch (error) {
       console.error(`Error sending request to device ${device}:`, error);
+      throw error;
+    }
+  }
+
+  private async sendMessage(message: EnhancedFcmMessage & { token?: string; topic?: string; condition?: string }): Promise<void> {
+    const projectId = this.validateProjectId();
+    const accessToken = await this.getAccessToken();
+    const url = `${this.fcmHost}/v1/projects/${projectId}/messages:send`;
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json()) as FcmErrorResponse;
+        if (message.token && data.error?.message?.includes("not a valid FCM registration token")) {
+          throw new Error("UNREGISTERED");
+        }
+        throw new Error(
+          `HTTP error! status: ${response.status}, message: ${
+            data.error?.message || response.statusText
+          }`
+        );
+      }
+    } catch (error) {
+      const target = message.token ? `token ${message.token}` :
+                    message.topic ? `topic ${message.topic}` :
+                    message.condition ? `condition "${message.condition}"` : 
+                    'unknown target';
+      console.error(`Error sending message to ${target}:`, error);
       throw error;
     }
   }
