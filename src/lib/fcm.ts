@@ -371,6 +371,12 @@ export class FCM {
           data.error.message.includes("not a valid FCM registration token")
         ) {
           throw new Error("UNREGISTERED");
+        } else if (
+          response.status === 404 &&
+          data.error &&
+          data.error.message.includes("Requested entity was not found")
+        ) {
+          throw new Error("UNREGISTERED");
         } else {
           throw new Error(
             `HTTP error! status: ${response.status}, message: ${
