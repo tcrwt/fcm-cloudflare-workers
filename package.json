@@ -15,7 +15,8 @@
     "dev": "npm run build && npm link && cd fixtures && npm link fcm-cloudflare-workers && npx wrangler dev",
     "test": "npx ts-node test/test.ts",
     "build": "tsc",
-    "publish-lib": "npm run build && npm publish"
+    "publish-lib": "npm run build && npm publish",
+    "prepare": "tsc"
   },
   "author": "Paras Daryanani <paras@celestify.com>",
   "license": "Apache-2.0",
